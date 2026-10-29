@@ -18,6 +18,11 @@ tool versions from `ci/versions.env`; `ci/gitleaks.sh [dir]` is the pinned, hist
 they call. `ci/golangci-lint.sh [args...]` runs the pinned, SHA-256-verified golangci-lint
 prebuilt binary, downloaded once and cached.
 
+When govulncheck reports a reachable advisory that has no fixed version, a repository can list its
+ID in `.github/vuln-allow.txt` (one `GO-YYYY-NNNN` per line, optional trailing reason, `#` starts a
+comment). The gate prints `ci-go: allowing <ID>` and passes; any unlisted advisory still fails.
+Allowlists are per repository and should be reviewed like code.
+
 ## Environment
 
 | Variable | Used by | Meaning |
