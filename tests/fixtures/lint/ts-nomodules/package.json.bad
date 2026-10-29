@@ -1,0 +1,7 @@
+{
+  "name": "lint-nomodules",
+  "private": true,
+  "scripts": {
+    "lint": "echo lint"
+  }
+}

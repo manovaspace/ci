@@ -1,0 +1,7 @@
+{
+  "name": "lint-bad",
+  "private": true,
+  "scripts": {
+    "lint": "exit 1"
+  }
+}
