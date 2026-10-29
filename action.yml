@@ -1,0 +1,76 @@
+name: Manova CI gate
+description: Run the Manova Go or TypeScript CI gate with pinned tool versions.
+
+inputs:
+  stack:
+    description: "go or ts"
+    required: true
+  working-directory:
+    description: "Directory to check"
+    required: false
+    default: "."
+  skip-tests:
+    description: "Allow a TS package without a test script"
+    required: false
+    default: "false"
+  extra:
+    description: "One extra package script to run (TS only)"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: validate stack
+      shell: bash
+      env:
+        STACK: ${{ inputs.stack }}
+      run: |
+        set -euo pipefail
+        case "$STACK" in
+          go | ts) ;;
+          *)
+            echo "ci: unknown stack '$STACK'" >&2
+            exit 1
+            ;;
+        esac
+
+    - name: versions
+      shell: bash
+      run: grep -E '^[A-Z_]+=' "$GITHUB_ACTION_PATH/ci/versions.env" >> "$GITHUB_ENV"
+
+    - name: setup go
+      if: inputs.stack == 'go'
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        # go.mod always exists, so hashFiles never resolves to nothing when go.sum is absent.
+        cache-dependency-path: |
+          ${{ inputs.working-directory }}/go.mod
+          ${{ inputs.working-directory }}/go.sum
+
+    - name: setup bun
+      if: inputs.stack == 'ts'
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: ${{ env.BUN_VERSION }}
+
+    - name: setup node
+      if: inputs.stack == 'ts'
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: gate
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        STACK: ${{ inputs.stack }}
+        CI_EXTRA: ${{ inputs.extra }}
+        SKIP_TESTS: ${{ inputs.skip-tests }}
+      run: |
+        set -euo pipefail
+        if [[ "$SKIP_TESTS" == true ]]; then
+          export CI_SKIP_TESTS=1
+        fi
+        bash "$GITHUB_ACTION_PATH/ci/$STACK.sh" .
