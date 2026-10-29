@@ -1,0 +1,63 @@
+name: self-test
+
+# Exercises the published composite action through `uses: ./`, so a broken action.yml or a broken
+# gate wiring fails here before it reaches a consumer.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: ./
+        with:
+          stack: go
+          working-directory: tests/fixtures/go/gomod-ok
+
+  ts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: ./
+        with:
+          stack: ts
+          working-directory: tests/fixtures/ts/ts-ok
+
+  bad-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: unknown stack fails
+        id: bad
+        uses: ./
+        continue-on-error: true
+        with:
+          stack: rust
+
+      - name: unknown stack was rejected
+        env:
+          OUTCOME: ${{ steps.bad.outcome }}
+        run: |
+          set -euo pipefail
+          if [[ "$OUTCOME" != failure ]]; then
+            echo "ci: stack 'rust' should have failed, outcome was '$OUTCOME'" >&2
+            exit 1
+          fi

@@ -1,0 +1,28 @@
+name: CodeQL
+
+# Weekly and on demand only: a scan on every push would duplicate the CI gate.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3.38.0
+        with:
+          languages: __LANG__
+
+      - uses: github/codeql-action/autobuild@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3.38.0
+
+      - uses: github/codeql-action/analyze@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3.38.0
