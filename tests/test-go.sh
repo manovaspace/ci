@@ -33,6 +33,24 @@ rc=$?
 set -e
 [[ $rc -ne 0 ]] || fail "vulnerable module should fail"
 
+# 2b. The same finding allowlisted by ID: the gate passes and names the advisory.
+cp -R "$FIX/gomod-vuln" "$tmp/vuln-allowed"
+mkdir -p "$tmp/vuln-allowed/.github"
+printf '# advisory without a fixed version\nGO-2099-0001  stub finding\n' >"$tmp/vuln-allowed/.github/vuln-allow.txt"
+run_go_sh --no-race "$tmp/vuln-allowed" >"$tmp/vuln-allowed.log" 2>&1 \
+  || { cat "$tmp/vuln-allowed.log" >&2; fail "allowlisted advisory should pass"; }
+grep -q 'allowing GO-2099-0001' "$tmp/vuln-allowed.log" || fail "gate should name the allowed advisory"
+
+# 2c. An allowlist for a different advisory does not hide this one.
+cp -R "$FIX/gomod-vuln" "$tmp/vuln-other"
+mkdir -p "$tmp/vuln-other/.github"
+printf 'GO-2000-0002  a different advisory\n' >"$tmp/vuln-other/.github/vuln-allow.txt"
+set +e
+run_go_sh --no-race "$tmp/vuln-other" >"$tmp/vuln-other.log" 2>&1
+rc=$?
+set -e
+[[ $rc -ne 0 ]] || fail "an unrelated allowlist must not hide a finding"
+
 # 3. Planted secret in the tree: gitleaks runs first and fails the gate.
 cp -R "$FIX/gomod-ok" "$tmp/leak"
 printf 'aws_access_key_id = %s%s\n' AKIA Q7ZK3M2NPXV5HBLT >"$tmp/leak/config.env"

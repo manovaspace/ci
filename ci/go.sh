@@ -110,7 +110,32 @@ echo "==> go test"
 go test "${race[@]}" -count=1 ./...
 
 echo "==> govulncheck"
-"${vuln_cmd[@]}" ./...
+# A repository may allowlist reachable advisories that have no fixed version
+# (one GO-YYYY-NNNN per line, # starts a comment). Unlisted findings still fail.
+allow_file="$ROOT/.github/vuln-allow.txt"
+allowed=""
+if [[ -f "$allow_file" ]]; then
+  allowed="$(grep -v '^[[:space:]]*#' "$allow_file" | awk 'NF {print $1}' | grep -E '^GO-' || true)"
+fi
+vuln_rc=0
+vuln_out="$("${vuln_cmd[@]}" ./... 2>&1)" || vuln_rc=$?
+if [[ $vuln_rc -ne 0 ]]; then
+  found="$(printf '%s\n' "$vuln_out" | sed -n 's/^Vulnerability #[0-9][0-9]*: \(GO-[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]\).*/\1/p' | sort -u)"
+  unlisted=""
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    grep -qx "$id" <<<"$allowed" || unlisted="$unlisted $id"
+  done <<<"$found"
+  if [[ -n "$found" && -z "$unlisted" ]]; then
+    for id in $found; do
+      echo "ci-go: allowing $id (listed in .github/vuln-allow.txt)"
+    done
+  else
+    printf '%s\n' "$vuln_out" >&2
+    exit 1
+  fi
+fi
+printf '%s\n' "$vuln_out" | grep -E 'Vulnerability #|No vulnerabilities found' >&2 || true
 
 echo "==> golangci-lint"
 "${lint_cmd[@]}" ./...
