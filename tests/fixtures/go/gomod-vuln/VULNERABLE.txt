@@ -1,0 +1,1 @@
+Fixture marker: the stub govulncheck reports a finding when this file exists.

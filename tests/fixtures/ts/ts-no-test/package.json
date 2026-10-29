@@ -1,0 +1,11 @@
+{
+	"name": "ts-no-test-fixture",
+	"private": true,
+	"scripts": {
+		"lint": "echo lint >> ran.log",
+		"build": "echo build >> ran.log"
+	},
+	"dependencies": {
+		"local-dep": "file:local-dep"
+	}
+}

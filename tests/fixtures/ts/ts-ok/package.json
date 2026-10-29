@@ -1,0 +1,15 @@
+{
+	"name": "ts-ok-fixture",
+	"private": true,
+	"scripts": {
+		"lint": "echo lint >> ran.log",
+		"typecheck": "echo typecheck >> ran.log",
+		"test": "echo test >> ran.log",
+		"build": "echo build >> ran.log",
+		"selfcheck": "echo selfcheck >> ran.log",
+		"probe": "test -f .npmrc && grep -q '^@orbit:registry=' .npmrc && echo probe-ok >> ran.log"
+	},
+	"dependencies": {
+		"local-dep": "file:local-dep"
+	}
+}
