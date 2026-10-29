@@ -5,7 +5,7 @@
 # Usage: ci/go.sh [--no-race] [repo-dir]
 # Env:
 #   CI_GOVULNCHECK       override the govulncheck command (tests only; default: pinned go run)
-#   CI_GOLANGCI_LINT     override the golangci-lint command (tests only; default: pinned go run)
+#   CI_GOLANGCI_LINT     override the golangci-lint command (tests only; default: pinned prebuilt)
 #   CI_SIBLING_URL_BASE  prefix for sibling clone URLs (default https://; tests use file://)
 #   GH_READ_TOKEN        GitHub read token for private github.com/manovaspace modules and siblings
 set -euo pipefail
@@ -100,7 +100,7 @@ fi
 if [[ -n "${CI_GOLANGCI_LINT:-}" ]]; then
   read -r -a lint_cmd <<<"$CI_GOLANGCI_LINT"
 else
-  lint_cmd=(go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}" run)
+  lint_cmd=("$HERE/golangci-lint.sh" run)
 fi
 
 echo "==> go vet"
