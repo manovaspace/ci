@@ -15,7 +15,8 @@ version file, callable from any workflow. Public and MIT — no secrets live her
 
 The Go and TS gates source `ci/lib/snapshot.sh` (disk guard + disposable pinned checkout) and read
 tool versions from `ci/versions.env`; `ci/gitleaks.sh [dir]` is the pinned, history-free scanner
-they call.
+they call. `ci/golangci-lint.sh [args...]` runs the pinned, SHA-256-verified golangci-lint
+prebuilt binary, downloaded once and cached.
 
 ## Environment
 
