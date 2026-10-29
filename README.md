@@ -9,9 +9,13 @@ version file, callable from any workflow. Public and MIT — no secrets live her
   `gofmt -l`, `go vet`, `go test -race -count=1`, `govulncheck`, `golangci-lint`.
 - `ci/ts.sh [repo-dir]` — gitleaks tree scan, optional `@orbit` `.npmrc`, `bun install
   --frozen-lockfile`, then `lint`, `typecheck`, `test`, `build` when the package defines them.
+- `ci/lint.sh [repo-dir]` — fast, offline pre-push lint: `gofmt` + `go vet` for Go, the package
+  `lint` script or Biome for Bun, and a clean skip for trees it cannot lint. The workspace
+  `pre-push` hook runs it.
 
-Both source `ci/lib/snapshot.sh` (disk guard + disposable pinned checkout) and read tool versions
-from `ci/versions.env`; `ci/gitleaks.sh [dir]` is the pinned, history-free scanner they call.
+The Go and TS gates source `ci/lib/snapshot.sh` (disk guard + disposable pinned checkout) and read
+tool versions from `ci/versions.env`; `ci/gitleaks.sh [dir]` is the pinned, history-free scanner
+they call.
 
 ## Environment
 

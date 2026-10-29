@@ -1,0 +1,7 @@
+{
+  "name": "lint-nolint",
+  "private": true,
+  "scripts": {
+    "test": "true"
+  }
+}

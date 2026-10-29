@@ -1,0 +1,7 @@
+{
+  "name": "lint-ok",
+  "private": true,
+  "scripts": {
+    "lint": "echo lint >> ran.log"
+  }
+}
