@@ -36,7 +36,13 @@ expect_fail no-test bash "$TS_SH" "$tmp/notest"
 cp -R "$FIX/ts-no-test" "$tmp/notest-skip"
 CI_SKIP_TESTS=1 bash "$TS_SH" "$tmp/notest-skip" >/dev/null 2>&1 || fail "CI_SKIP_TESTS=1 should allow a missing test"
 
-# 3. Missing lockfile: fails before install.
+# 2b. A dependency-free package (shell helpers) has no lockfile and needs no install.
+cp -R "$FIX/ts-nodeps" "$tmp/nodeps"
+bash "$TS_SH" "$tmp/nodeps" >"$tmp/nodeps.log" 2>&1 || { cat "$tmp/nodeps.log" >&2; fail "dependency-free package should pass"; }
+grep -q 'skipping the install step' "$tmp/nodeps.log" || fail "dependency-free package should skip install"
+[[ "$(cat "$tmp/nodeps/ran.log")" == $'lint\ntest' ]] || fail "scripts did not run for a dependency-free package"
+
+# 3. Missing lockfile with dependencies: fails before install.
 cp -R "$FIX/ts-nolock" "$tmp/nolock"
 expect_fail no-lock bash "$TS_SH" "$tmp/nolock"
 
@@ -53,5 +59,14 @@ NPM_TOKEN=test-token-not-real CI_EXTRA=probe bash "$TS_SH" "$tmp/npm" >/dev/null
   || fail "NPM_TOKEN run should pass"
 grep -qx probe-ok "$tmp/npm/ran.log" || fail ".npmrc with @orbit registry was not present during the run"
 [[ ! -e "$tmp/npm/.npmrc" ]] || fail ".npmrc containing a token survived the run"
+
+# 6. An existing .npmrc is kept, gains the token for the run, and is restored byte for byte.
+cp -R "$FIX/ts-ok" "$tmp/npm-existing"
+printf '@orbit:registry=https://npm.internal.manova.space\n# keep-me\n' >"$tmp/npm-existing/.npmrc"
+cp "$tmp/npm-existing/.npmrc" "$tmp/npm-original"
+NPM_TOKEN=test-token-not-real CI_EXTRA=probe bash "$TS_SH" "$tmp/npm-existing" >/dev/null 2>&1 \
+  || fail "NPM_TOKEN run with an existing .npmrc should pass"
+grep -qx probe-ok "$tmp/npm-existing/ran.log" || fail "existing .npmrc did not get the token during the run"
+cmp -s "$tmp/npm-original" "$tmp/npm-existing/.npmrc" || fail "existing .npmrc was not restored"
 
 echo "PASS: test-ts"

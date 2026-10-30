@@ -40,20 +40,34 @@ if [[ -d "$ROOT/.github/workflows" ]]; then
   "$HERE/actionlint.sh" -no-color
 fi
 
-[[ -f bun.lock || -f bun.lockb ]] || {
-  echo "ci/ts.sh: no bun.lock or bun.lockb; --frozen-lockfile requires one" >&2
-  exit 1
-}
-
-if [[ -n "${NPM_TOKEN:-}" ]]; then
-  [[ ! -e .npmrc ]] || { echo "ci/ts.sh: .npmrc already exists; refusing to overwrite it" >&2; exit 1; }
-  printf '@orbit:registry=https://npm.internal.manova.space/\n//npm.internal.manova.space/:_authToken=%s\n' \
-    "$NPM_TOKEN" >.npmrc
-  trap 'rm -f -- "$ROOT/.npmrc"' EXIT
+if [[ ! -f bun.lock && ! -f bun.lockb ]]; then
+  # A dependency-free package (shell helpers with npm scripts) has no lockfile: bun deletes an
+  # empty one. Only packages that declare dependencies must ship a lockfile.
+  if grep -qE '"(dependencies|devDependencies|peerDependencies|optionalDependencies)"[[:space:]]*:' package.json; then
+    echo "ci/ts.sh: no bun.lock or bun.lockb; --frozen-lockfile requires one" >&2
+    exit 1
+  fi
+  echo "ci/ts.sh: no dependencies declared; skipping the install step"
 fi
 
-echo "==> bun install --frozen-lockfile"
-bun install --frozen-lockfile
+if [[ -n "${NPM_TOKEN:-}" ]]; then
+  if [[ -e .npmrc ]]; then
+    # A repository may ship its own registry lines; add the token for the run and restore it after.
+    npmrc_backup="$(mktemp)"
+    cp .npmrc "$npmrc_backup"
+    printf '//npm.internal.manova.space/:_authToken=%s\n' "$NPM_TOKEN" >>.npmrc
+    trap 'mv -f -- "$npmrc_backup" "$ROOT/.npmrc"' EXIT
+  else
+    printf '@orbit:registry=https://npm.internal.manova.space/\n//npm.internal.manova.space/:_authToken=%s\n' \
+      "$NPM_TOKEN" >.npmrc
+    trap 'rm -f -- "$ROOT/.npmrc"' EXIT
+  fi
+fi
+
+if [[ -f bun.lock || -f bun.lockb ]]; then
+  echo "==> bun install --frozen-lockfile"
+  bun install --frozen-lockfile
+fi
 
 run_if_present lint
 run_if_present typecheck

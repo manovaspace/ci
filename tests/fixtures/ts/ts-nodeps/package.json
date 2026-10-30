@@ -1,0 +1,8 @@
+{
+	"name": "ts-nodeps-fixture",
+	"private": true,
+	"scripts": {
+		"lint": "echo lint >> ran.log",
+		"test": "echo test >> ran.log"
+	}
+}
