@@ -40,10 +40,15 @@ if [[ -d "$ROOT/.github/workflows" ]]; then
   "$HERE/actionlint.sh" -no-color
 fi
 
-[[ -f bun.lock || -f bun.lockb ]] || {
-  echo "ci/ts.sh: no bun.lock or bun.lockb; --frozen-lockfile requires one" >&2
-  exit 1
-}
+if [[ ! -f bun.lock && ! -f bun.lockb ]]; then
+  # A dependency-free package (shell helpers with npm scripts) has no lockfile: bun deletes an
+  # empty one. Only packages that declare dependencies must ship a lockfile.
+  if grep -qE '"(dependencies|devDependencies|peerDependencies|optionalDependencies)"[[:space:]]*:' package.json; then
+    echo "ci/ts.sh: no bun.lock or bun.lockb; --frozen-lockfile requires one" >&2
+    exit 1
+  fi
+  echo "ci/ts.sh: no dependencies declared; skipping the install step"
+fi
 
 if [[ -n "${NPM_TOKEN:-}" ]]; then
   if [[ -e .npmrc ]]; then
@@ -59,8 +64,10 @@ if [[ -n "${NPM_TOKEN:-}" ]]; then
   fi
 fi
 
-echo "==> bun install --frozen-lockfile"
-bun install --frozen-lockfile
+if [[ -f bun.lock || -f bun.lockb ]]; then
+  echo "==> bun install --frozen-lockfile"
+  bun install --frozen-lockfile
+fi
 
 run_if_present lint
 run_if_present typecheck
