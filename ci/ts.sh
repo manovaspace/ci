@@ -46,10 +46,17 @@ fi
 }
 
 if [[ -n "${NPM_TOKEN:-}" ]]; then
-  [[ ! -e .npmrc ]] || { echo "ci/ts.sh: .npmrc already exists; refusing to overwrite it" >&2; exit 1; }
-  printf '@orbit:registry=https://npm.internal.manova.space/\n//npm.internal.manova.space/:_authToken=%s\n' \
-    "$NPM_TOKEN" >.npmrc
-  trap 'rm -f -- "$ROOT/.npmrc"' EXIT
+  if [[ -e .npmrc ]]; then
+    # A repository may ship its own registry lines; add the token for the run and restore it after.
+    npmrc_backup="$(mktemp)"
+    cp .npmrc "$npmrc_backup"
+    printf '//npm.internal.manova.space/:_authToken=%s\n' "$NPM_TOKEN" >>.npmrc
+    trap 'mv -f -- "$npmrc_backup" "$ROOT/.npmrc"' EXIT
+  else
+    printf '@orbit:registry=https://npm.internal.manova.space/\n//npm.internal.manova.space/:_authToken=%s\n' \
+      "$NPM_TOKEN" >.npmrc
+    trap 'rm -f -- "$ROOT/.npmrc"' EXIT
+  fi
 fi
 
 echo "==> bun install --frozen-lockfile"

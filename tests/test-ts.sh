@@ -54,4 +54,13 @@ NPM_TOKEN=test-token-not-real CI_EXTRA=probe bash "$TS_SH" "$tmp/npm" >/dev/null
 grep -qx probe-ok "$tmp/npm/ran.log" || fail ".npmrc with @orbit registry was not present during the run"
 [[ ! -e "$tmp/npm/.npmrc" ]] || fail ".npmrc containing a token survived the run"
 
+# 6. An existing .npmrc is kept, gains the token for the run, and is restored byte for byte.
+cp -R "$FIX/ts-ok" "$tmp/npm-existing"
+printf '@orbit:registry=https://npm.internal.manova.space\n# keep-me\n' >"$tmp/npm-existing/.npmrc"
+cp "$tmp/npm-existing/.npmrc" "$tmp/npm-original"
+NPM_TOKEN=test-token-not-real CI_EXTRA=probe bash "$TS_SH" "$tmp/npm-existing" >/dev/null 2>&1 \
+  || fail "NPM_TOKEN run with an existing .npmrc should pass"
+grep -qx probe-ok "$tmp/npm-existing/ran.log" || fail "existing .npmrc did not get the token during the run"
+cmp -s "$tmp/npm-original" "$tmp/npm-existing/.npmrc" || fail "existing .npmrc was not restored"
+
 echo "PASS: test-ts"

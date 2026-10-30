@@ -7,7 +7,7 @@
 		"test": "echo test >> ran.log",
 		"build": "echo build >> ran.log",
 		"selfcheck": "echo selfcheck >> ran.log",
-		"probe": "test -f .npmrc && grep -q '^@orbit:registry=' .npmrc && echo probe-ok >> ran.log"
+		"probe": "test -f .npmrc && grep -q '^@orbit:registry=' .npmrc && grep -q '_authToken=test-token-not-real' .npmrc && echo probe-ok >> ran.log"
 	},
 	"dependencies": {
 		"local-dep": "file:local-dep"
