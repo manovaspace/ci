@@ -31,8 +31,10 @@ lint_go() {
 
 lint_ts() {
   if [[ ! -d node_modules ]]; then
-    echo "ci-lint: node_modules missing, run bun install" >&2
-    exit 1
+    # Pre-push must never install and must not block a worktree that has no dependencies yet;
+    # the full gate in CI still lints the pushed tree.
+    echo "ci-lint: node_modules missing, skipping (run bun install to lint locally)"
+    exit 0
   fi
   if has_script lint; then
     echo "==> bun run lint"
