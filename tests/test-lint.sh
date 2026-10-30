@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests ci/lint.sh with offline fixtures: a clean Go module passes, unformatted Go fails,
-# a package lint script runs, a failing script fails, a missing node_modules fails with an
-# install hint, and trees without a lint script or a known stack skip with exit 0.
+# a package lint script runs, a failing script fails, a missing node_modules skips with a hint,
+# and trees without a lint script or a known stack skip with exit 0.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -51,12 +51,13 @@ cp -R "$FIX/ts-bad" "$tmp/ts-bad"
 mv "$tmp/ts-bad/package.json.bad" "$tmp/ts-bad/package.json"
 expect_fail ts-bad bash "$LINT_SH" "$tmp/ts-bad"
 
-# 5. Missing node_modules: fail with an install hint, never install.
+# 5. Missing node_modules: skip without installing (CI still runs the full gate).
 cp -R "$FIX/ts-nomodules" "$tmp/ts-nomodules"
 mv "$tmp/ts-nomodules/package.json.bad" "$tmp/ts-nomodules/package.json"
-expect_fail ts-nomodules bash "$LINT_SH" "$tmp/ts-nomodules"
-grep -q 'node_modules missing, run bun install' "$tmp/ts-nomodules.log" \
-  || fail "ts-nomodules should tell the user to run bun install"
+bash "$LINT_SH" "$tmp/ts-nomodules" >"$tmp/ts-nomodules.log" 2>&1 \
+  || { cat "$tmp/ts-nomodules.log" >&2; fail "ts-nomodules should skip"; }
+grep -q 'node_modules missing, skipping' "$tmp/ts-nomodules.log" \
+  || fail "ts-nomodules should report the skip"
 
 # 6. No lint script and no Biome: skip with exit 0.
 cp -R "$FIX/ts-nolint" "$tmp/ts-nolint"
