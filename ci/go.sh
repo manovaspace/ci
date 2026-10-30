@@ -82,6 +82,12 @@ echo "==> gitleaks"
 "$HERE/gitleaks.sh" "$ROOT"
 
 cd "$ROOT"
+
+if [[ -d "$ROOT/.github/workflows" ]]; then
+  echo "==> actionlint"
+  "$HERE/actionlint.sh" -no-color
+fi
+
 resolve_siblings
 
 echo "==> gofmt"

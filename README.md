@@ -16,7 +16,8 @@ version file, callable from any workflow. Public and MIT — no secrets live her
 The Go and TS gates source `ci/lib/snapshot.sh` (disk guard + disposable pinned checkout) and read
 tool versions from `ci/versions.env`; `ci/gitleaks.sh [dir]` is the pinned, history-free scanner
 they call. `ci/golangci-lint.sh [args...]` runs the pinned, SHA-256-verified golangci-lint
-prebuilt binary, downloaded once and cached.
+prebuilt binary, downloaded once and cached. `ci/actionlint.sh [args...]` does the same for
+actionlint and runs on any repository that has `.github/workflows`.
 
 When govulncheck reports a reachable advisory that has no fixed version, a repository can list its
 ID in `.github/vuln-allow.txt` (one `GO-YYYY-NNNN` per line, optional trailing reason, `#` starts a

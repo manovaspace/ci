@@ -34,6 +34,12 @@ echo "==> gitleaks"
 "$HERE/gitleaks.sh" "$ROOT"
 
 cd "$ROOT"
+
+if [[ -d "$ROOT/.github/workflows" ]]; then
+  echo "==> actionlint"
+  "$HERE/actionlint.sh" -no-color
+fi
+
 [[ -f bun.lock || -f bun.lockb ]] || {
   echo "ci/ts.sh: no bun.lock or bun.lockb; --frozen-lockfile requires one" >&2
   exit 1
