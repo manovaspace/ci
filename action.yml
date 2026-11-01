@@ -5,6 +5,10 @@ inputs:
   stack:
     description: "go or ts"
     required: true
+  tier:
+    description: "pr or release"
+    required: false
+    default: "pr"
   working-directory:
     description: "Directory to check"
     required: false
@@ -21,16 +25,24 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: validate stack
+    - name: validate stack and tier
       shell: bash
       env:
         STACK: ${{ inputs.stack }}
+        TIER: ${{ inputs.tier }}
       run: |
         set -euo pipefail
         case "$STACK" in
           go | ts) ;;
           *)
             echo "ci: unknown stack '$STACK'" >&2
+            exit 1
+            ;;
+        esac
+        case "$TIER" in
+          pr | release) ;;
+          *)
+            echo "ci: unknown tier '$TIER'" >&2
             exit 1
             ;;
         esac
@@ -66,6 +78,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         STACK: ${{ inputs.stack }}
+        CI_TIER: ${{ inputs.tier }}
         CI_EXTRA: ${{ inputs.extra }}
         SKIP_TESTS: ${{ inputs.skip-tests }}
       run: |

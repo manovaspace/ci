@@ -62,8 +62,9 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
-Inputs: `stack` (`go` or `ts`, required), `working-directory` (default `.`), `skip-tests` (`true`
-allows a TS package without a `test` script) and `extra` (one extra TS package script).
+Inputs: `stack` (`go` or `ts`, required), `tier` (`pr` or `release`, default `pr`),
+`working-directory` (default `.`), `skip-tests` (`true` allows a TS package without a `test`
+script) and `extra` (one extra TS package script).
 `GH_READ_TOKEN` and `NPM_TOKEN` are not inputs: they arrive from the caller's step `env:`.
 
 `vars.CI_RUNNER` selects the runner: unset means `ubuntu-latest`, `vps` switches the repository to
@@ -72,6 +73,66 @@ the standby self-hosted runner.
 `templates/` holds copy-paste workflows: `ci.yml` (the file above), `codeql.yml` (weekly CodeQL on
 a schedule, no per-push run) and `deploy-ssh.yml` (SSH deploy of `__SERVICE__` on `main`). Replace
 `__STACK__`, `__LANG__` and `__SERVICE__` with the repository's values.
+
+## Tiers
+
+`tier` (default `pr`) says how much the gate runs. Only `ci/go.sh` acts on it (`CI_TIER`); `ci/ts.sh`
+ignores it for now.
+
+- `pr` — the light gate on every pull request. Behaviour is unchanged: `go test -race -count=1 ./...`
+  and a test that skips itself stays green.
+- `release` — the heavy gate on the release pull request. `TEST_DATABASE_URL` must be set and
+  non-empty, or the gate exits 1 with `ci-go: tier=release needs TEST_DATABASE_URL` before running
+  anything. Tests then run as `go test -race -count=1 -v ./...` against real dependencies, and any
+  skipped test fails the gate unless the repository lists it — a database-backed test that skips
+  itself proves nothing and must not pass silently on the release.
+
+`.github/allowed-skips.txt` lives in the consumer repository: one Go test name per line, `#` starts a
+comment, and an optional trailing reason is ignored (same parsing as `.github/vuln-allow.txt`).
+
+```
+# integration tests with no fixture yet
+TestNeedsLegacyReplica  needs the legacy replica
+```
+
+Each listed skip prints `ci-go: allowing skip <name>`; an unlisted one prints
+`ci-go: skipped tests are not allowed on tier=release (list them in .github/allowed-skips.txt):`
+followed by the test names, and fails. A failing `go test` exits with its own code.
+
+### Release workflow
+
+`.github/workflows/release-check.yml` is a reusable workflow for that tier: it starts PostgreSQL,
+Redis and NATS (JetStream), then runs the gate with `stack: go` and `tier: release`, and passes
+`TEST_DATABASE_URL`, `TEST_REDIS_URL` and `TEST_NATS_URL` to it. Call it from the bot's release
+pull request into `main`, which is recognised by its head branch name (`changeset-release/main` for
+Changesets, `release-please--*` for release-please); there is no `release` branch:
+
+```yaml
+name: release-check
+on:
+  pull_request:
+    branches: [main]
+permissions: { contents: read }
+jobs:
+  release-check:
+    if: github.head_ref == 'changeset-release/main' || startsWith(github.head_ref, 'release-please--')
+    uses: manovaspace/ci/.github/workflows/release-check.yml@v1
+    secrets: inherit
+```
+
+It always runs on `ubuntu-latest` and never on the standby VPS runner: `vars.CI_RUNNER` is not
+consulted, because release checks need service containers and docker.
+
+### Pinning
+
+`uses: manovaspace/ci@v1` follows a moving tag, so a new release changes CI under every consumer at
+once. Pin the kit by full commit SHA with a version comment instead:
+
+```yaml
+- uses: manovaspace/ci@<40-hex sha> # v1.0.7
+```
+
+A moved tag then cannot change CI under you, and Renovate keeps the pin current.
 
 ## Tests
 
