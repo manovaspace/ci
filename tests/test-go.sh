@@ -2,6 +2,7 @@
 # Tests ci/go.sh with fixtures and stubs: clean module passes, a reachable vuln fails,
 # a planted secret fails, a sibling `replace => ../orbit-*` is cloned and resolved, unformatted
 # source fails, and a private sibling without GH_READ_TOKEN fails fast instead of prompting.
+# Tier cases: tier=release needs TEST_DATABASE_URL and treats an unlisted skipped test as a failure.
 # Tool stubs replace govulncheck and golangci-lint so the test needs no network.
 set -euo pipefail
 
@@ -107,5 +108,50 @@ set -e
 [[ $rc -ne 124 ]] || fail "private sibling without GH_READ_TOKEN timed out"
 grep -q 'orbit-billing' "$tmp/priv.log" || fail "error should name the sibling module"
 grep -q 'GH_READ_TOKEN' "$tmp/priv.log" || fail "error should mention GH_READ_TOKEN"
+
+# 7. tier=release without TEST_DATABASE_URL: fail before any test runs and say which variable.
+cp -R "$FIX/gomod-skip" "$tmp/skip-nodb"
+set +e
+( unset TEST_DATABASE_URL; CI_TIER=release run_go_sh --no-race "$tmp/skip-nodb" ) >"$tmp/skip-nodb.log" 2>&1
+rc=$?
+set -e
+[[ $rc -ne 0 ]] || fail "tier=release without TEST_DATABASE_URL should fail"
+grep -q 'TEST_DATABASE_URL' "$tmp/skip-nodb.log" || fail "error should mention TEST_DATABASE_URL"
+
+# 8. tier=release with a database but a skipped, unlisted test: fail and name the test.
+cp -R "$FIX/gomod-skip" "$tmp/skip-unlisted"
+set +e
+CI_TIER=release TEST_DATABASE_URL=x run_go_sh --no-race "$tmp/skip-unlisted" >"$tmp/skip-unlisted.log" 2>&1
+rc=$?
+set -e
+[[ $rc -ne 0 ]] || fail "tier=release should fail on an unlisted skipped test"
+grep -q 'TestNeedsDatabase' "$tmp/skip-unlisted.log" || fail "error should name the skipped test"
+
+# 9. The same skip listed in .github/allowed-skips.txt: pass and name the allowed skip.
+cp -R "$FIX/gomod-skip" "$tmp/skip-allowed"
+mkdir -p "$tmp/skip-allowed/.github"
+printf '# integration tests\nTestNeedsDatabase  needs a database\n' >"$tmp/skip-allowed/.github/allowed-skips.txt"
+CI_TIER=release TEST_DATABASE_URL=x run_go_sh --no-race "$tmp/skip-allowed" >"$tmp/skip-allowed.log" 2>&1 \
+  || { cat "$tmp/skip-allowed.log" >&2; fail "an allowlisted skip should pass on tier=release"; }
+grep -q 'allowing skip TestNeedsDatabase' "$tmp/skip-allowed.log" || fail "gate should name the allowed skip"
+
+# 10. tier=pr (the default, CI_TIER unset) on the same module: pass, skipping stays allowed.
+cp -R "$FIX/gomod-skip" "$tmp/skip-pr"
+( unset CI_TIER TEST_DATABASE_URL; run_go_sh --no-race "$tmp/skip-pr" ) >"$tmp/skip-pr.log" 2>&1 \
+  || { cat "$tmp/skip-pr.log" >&2; fail "tier=pr should not police skipped tests"; }
+
+# 11. An unknown tier is rejected by name.
+cp -R "$FIX/gomod-ok" "$tmp/bad-tier"
+set +e
+CI_TIER=staging run_go_sh --no-race "$tmp/bad-tier" >"$tmp/bad-tier.log" 2>&1
+rc=$?
+set -e
+[[ $rc -ne 0 ]] || fail "an unknown tier should fail"
+grep -q 'unknown tier' "$tmp/bad-tier.log" || fail "error should say unknown tier"
+
+# 12. tier=release on a module with no skipped tests: pass with TEST_DATABASE_URL set.
+cp -R "$FIX/gomod-ok" "$tmp/rel-ok"
+CI_TIER=release TEST_DATABASE_URL=x run_go_sh --no-race "$tmp/rel-ok" >"$tmp/rel-ok.log" 2>&1 \
+  || { cat "$tmp/rel-ok.log" >&2; fail "tier=release on a clean module should pass"; }
 
 echo "PASS: test-go"

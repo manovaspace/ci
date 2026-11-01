@@ -8,6 +8,8 @@
 #                      Never set on pull_request runs. Never printed.
 #   CI_SKIP_TESTS=1    allow a package with no `test` script
 #   CI_EXTRA=<script>  run one more package script after the standard ones (must exist)
+#   CI_TIER            accepted for parity with action.yml; the tier only changes the Go gate
+#                      for now, so this gate ignores it.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

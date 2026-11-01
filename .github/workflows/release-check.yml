@@ -1,0 +1,81 @@
+name: release-check
+
+# Release-tier gate: the Go tests that need real dependencies (PostgreSQL, Redis, NATS JetStream)
+# and must not skip themselves silently. Runs on a GitHub-hosted runner only: it needs service
+# containers and docker, and the standby VPS runner must never run it, so `vars.CI_RUNNER` is
+# deliberately not consulted.
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Directory to check"
+        required: false
+        type: string
+        default: "."
+    secrets:
+      GH_READ_TOKEN:
+        description: "Read token for private github.com/manovaspace modules and siblings"
+        required: false
+      NPM_TOKEN:
+        description: "Read token for the @orbit scope"
+        required: false
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # NATS needs -js, and a service container cannot take command arguments, so run it here.
+      - name: start nats
+        run: |
+          set -euo pipefail
+          docker run -d --name nats -p 4222:4222 nats:2.14-alpine -js
+          for _ in $(seq 30); do
+            if nc -z localhost 4222; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "release-check: nats did not accept connections on 4222 within 30s" >&2
+          docker logs nats || true
+          exit 1
+
+      - uses: manovaspace/ci@v1
+        with:
+          stack: go
+          tier: release
+          working-directory: ${{ inputs.working-directory }}
+        env:
+          GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/test?sslmode=disable
+          TEST_REDIS_URL: redis://localhost:6379
+          TEST_NATS_URL: nats://localhost:4222

@@ -4,6 +4,9 @@
 #
 # Usage: ci/go.sh [--no-race] [repo-dir]
 # Env:
+#   CI_TIER              pr (default) or release; release needs TEST_DATABASE_URL and allows no
+#                        unlisted skipped test
+#   TEST_DATABASE_URL    database the release tier's integration tests run against
 #   CI_GOVULNCHECK       override the govulncheck command (tests only; default: pinned go run)
 #   CI_GOLANGCI_LINT     override the golangci-lint command (tests only; default: pinned prebuilt)
 #   CI_SIBLING_URL_BASE  prefix for sibling clone URLs (default https://; tests use file://)
@@ -31,6 +34,17 @@ for arg in "$@"; do
   esac
 done
 ROOT="$(cd "$repo" && pwd)"
+
+# Two tiers: pr is the light gate on every pull request, release is the heavy gate on the release
+# pull request (real database, no hidden skips).
+tier="${CI_TIER:-pr}"
+case "$tier" in
+  pr | release) ;;
+  *)
+    echo "ci-go: unknown tier '$tier'" >&2
+    exit 1
+    ;;
+esac
 
 if [[ -n "${GH_READ_TOKEN:-}" ]]; then
   # Private modules are fetched with the read token through git's insteadOf; the token is
@@ -113,7 +127,48 @@ echo "==> go vet"
 go vet ./...
 
 echo "==> go test"
-go test "${race[@]}" -count=1 ./...
+if [[ "$tier" == release ]]; then
+  # Release tests are the ones that need real dependencies, so there is no point running them
+  # without a database: fail before spending minutes on the rest of the gate.
+  if [[ -z "${TEST_DATABASE_URL:-}" ]]; then
+    echo "ci-go: tier=release needs TEST_DATABASE_URL" >&2
+    exit 1
+  fi
+  test_log="$(mktemp)"
+  trap 'rm -f -- "$test_log"' EXIT
+  test_rc=0
+  go test "${race[@]}" -count=1 -v ./... 2>&1 | tee "$test_log" || test_rc=$?
+
+  # A skipped test proves nothing. On the release tier a skip is allowed only when the repository
+  # lists the test in .github/allowed-skips.txt (same format as .github/vuln-allow.txt).
+  skip_file="$ROOT/.github/allowed-skips.txt"
+  allowed_skips=""
+  if [[ -f "$skip_file" ]]; then
+    allowed_skips="$(grep -v '^[[:space:]]*#' "$skip_file" | awk 'NF {print $1}' || true)"
+  fi
+  unlisted=""
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    if grep -qxF -- "$name" <<<"$allowed_skips"; then
+      echo "ci-go: allowing skip $name"
+    else
+      unlisted="$unlisted $name"
+    fi
+  done < <(sed -n 's/^[[:space:]]*--- SKIP: \([^ ]*\).*/\1/p' "$test_log" | sort -u)
+  if [[ -n "$unlisted" ]]; then
+    echo "ci-go: skipped tests are not allowed on tier=release (list them in .github/allowed-skips.txt):" >&2
+    for name in $unlisted; do
+      echo "$name" >&2
+    done
+    exit 1
+  fi
+  if [[ $test_rc -ne 0 ]]; then
+    echo "ci-go: go test failed on tier=release (exit $test_rc)" >&2
+    exit "$test_rc"
+  fi
+else
+  go test "${race[@]}" -count=1 ./...
+fi
 
 echo "==> govulncheck"
 # A repository may allowlist reachable advisories that have no fixed version
