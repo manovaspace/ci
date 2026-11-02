@@ -12,6 +12,8 @@ version file, callable from any workflow. Public and MIT — no secrets live her
 - `ci/lint.sh [repo-dir]` — fast, offline pre-push lint: `gofmt` + `go vet` for Go, the package
   `lint` script or Biome for Bun, and a clean skip for trees it cannot lint. The workspace
   `pre-push` hook runs it.
+- `ci/migrations.sh <glob>` — pinned squawk on the goose migrations a pull request changed against
+  its base branch only, so an old migration never fails a new rule.
 
 The Go and TS gates source `ci/lib/snapshot.sh` (disk guard + disposable pinned checkout) and read
 tool versions from `ci/versions.env`; `ci/gitleaks.sh [dir]` is the pinned, history-free scanner
@@ -64,7 +66,8 @@ jobs:
 
 Inputs: `stack` (`go` or `ts`, required), `tier` (`pr` or `release`, default `pr`),
 `working-directory` (default `.`), `skip-tests` (`true` allows a TS package without a `test`
-script) and `extra` (one extra TS package script).
+script), `extra` (one extra TS package script) and `migrations-glob` (default empty; see
+[Migrations](#migrations)).
 `GH_READ_TOKEN` and `NPM_TOKEN` are not inputs: they arrive from the caller's step `env:`.
 
 `vars.CI_RUNNER` selects the runner: unset means `ubuntu-latest`, `vps` switches the repository to
@@ -73,6 +76,42 @@ the standby self-hosted runner.
 `templates/` holds copy-paste workflows: `ci.yml` (the file above), `codeql.yml` (weekly CodeQL on
 a schedule, no per-push run) and `deploy-ssh.yml` (SSH deploy of `__SERVICE__` on `main`). Replace
 `__STACK__`, `__LANG__` and `__SERVICE__` with the repository's values.
+
+## Migrations
+
+Set `migrations-glob` to lint the goose migrations a pull request changes with the pinned
+`squawk`:
+
+```yaml
+- uses: manovaspace/ci@v1
+  with:
+    stack: go
+    migrations-glob: apps/api/migrations/*.sql
+```
+
+The glob is a git pathspec relative to `working-directory`. Only files added or modified by the
+pull request are linted: the action diffs
+`origin/$GITHUB_BASE_REF...HEAD -- <glob>` (falling back to the base tip against the checked-out
+merge tree when the shallow merge commit has no merge base) and never touches an unchanged file,
+so an old migration that breaks a new rule cannot fail an unrelated pull request. On `push` and
+`workflow_dispatch` runs there is no base branch, so the step prints why and lints nothing.
+
+Goose files are linted through their `-- +goose Up` section only; `squawk --help` has no goose
+mode, so the section is extracted with `sed` and piped to squawk with `--stdin-filepath`, which
+keeps the real migration name in the findings. A file without goose markers is linted whole.
+
+Squawk exits non-zero on any warning it reports, naming the rule and the file; the gate fails with
+it. To accept one finding, put squawk's ignore comment directly above the statement, with a reason
+after a second `--`:
+
+```sql
+-- squawk-ignore ban-drop-column -- the column is unused since #1234
+ALTER TABLE receipts DROP COLUMN legacy_ref;
+```
+
+Always give a reason: a bare ignore is invisible to review, and the reason is what lets the next
+reader decide whether the exception still holds. An ignore for a rule that did not fire is itself
+an `unused-ignore` warning, so remove stale ignores.
 
 ## Tiers
 

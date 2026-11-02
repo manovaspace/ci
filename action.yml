@@ -21,6 +21,10 @@ inputs:
     description: "One extra package script to run (TS only)"
     required: false
     default: ""
+  migrations-glob:
+    description: "Glob of goose migration files to lint with squawk on a pull request; empty disables"
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -87,3 +91,11 @@ runs:
           export CI_SKIP_TESTS=1
         fi
         bash "$GITHUB_ACTION_PATH/ci/$STACK.sh" .
+
+    - name: migrations
+      if: inputs.migrations-glob != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        MIGRATIONS_GLOB: ${{ inputs.migrations-glob }}
+      run: bash "$GITHUB_ACTION_PATH/ci/migrations.sh"
