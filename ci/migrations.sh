@@ -38,15 +38,21 @@ fi
 
 if ! git rev-parse --verify --quiet "origin/$base^{commit}" >/dev/null; then
   echo "ci-migrations: fetching origin/$base"
-  git fetch --no-tags --depth=1 origin "+refs/heads/$base:refs/remotes/origin/$base"
+  if ! git fetch --no-tags --depth=1 origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null; then
+    echo "ci-migrations: cannot fetch origin/$base; check out with fetch-depth: 0" \
+      "(private repositories with persist-credentials: false cannot fetch)" >&2
+    exit 1
+  fi
 fi
 
 # The glob is a git pathspec relative to the current directory (the action's working-directory).
+# `--relative` keeps the reported paths relative to that directory too, so the files can be read
+# and named from here; without it git prints repository-root paths and the reads fail.
 read -r -a patterns <<<"$glob"
-if ! changed="$(git diff --name-only --diff-filter=AM "origin/$base...HEAD" -- "${patterns[@]}" 2>/dev/null)"; then
+if ! changed="$(git diff --name-only --diff-filter=AM --relative "origin/$base...HEAD" -- "${patterns[@]}" 2>/dev/null)"; then
   # actions/checkout fetches the pull request merge commit at depth 1, so there is no merge base.
   # The merge tree against the base tip carries exactly the pull request's changes.
-  changed="$(git diff --name-only --diff-filter=AM "origin/$base" HEAD -- "${patterns[@]}")"
+  changed="$(git diff --name-only --diff-filter=AM --relative "origin/$base" HEAD -- "${patterns[@]}")"
 fi
 
 if [[ -z "$changed" ]]; then
