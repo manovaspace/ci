@@ -2,7 +2,8 @@
 # Tests ci/migrations.sh against a fixture repository with a base branch: a changed goose
 # migration that adds NOT NULL without a default fails, a changed nullable column passes, an
 # unchanged bad migration is not linted, the Down section is ignored, an empty glob does nothing,
-# and a checksum mismatch aborts before any lint runs.
+# a checksum mismatch aborts before any lint runs, an unreachable origin fails with a clear
+# checkout hint, and a migration under a subdirectory is linted from that working directory.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -135,5 +136,101 @@ rc=$?
 set -e
 [[ $rc -ne 0 ]] || fail "a checksum mismatch should fail"
 [[ ! -e "$cache/squawk/$SQUAWK_VERSION/squawk" ]] || fail "a checksum mismatch left a binary in the cache"
+
+# 7. An unreachable origin with no base ref fails with a clear checkout hint, not a raw git error.
+private="$tmp/private"
+git init -q "$private"
+git -C "$private" config user.email ci@example.invalid
+git -C "$private" config user.name ci
+goose 'ALTER TABLE t ADD COLUMN IF NOT EXISTS private_col text;' \
+  'ALTER TABLE t DROP COLUMN IF EXISTS private_col;' \
+  >"$private/migration.sql"
+git -C "$private" add -A
+git -C "$private" commit -qm private
+git -C "$private" remote add origin "file://$tmp/missing-remote.git"
+want="ci-migrations: cannot fetch origin/main; check out with fetch-depth: 0"
+want+=" (private repositories with persist-credentials: false cannot fetch)"
+set +e
+( cd "$private" && env GITHUB_BASE_REF=main bash "$MIGRATIONS_SH" 'migration.sql' ) \
+  >"$tmp/fetch.log" 2>&1
+rc=$?
+set -e
+[[ $rc -eq 1 ]] || fail "an unreachable origin should exit 1"
+grep -Fq -- "$want" "$tmp/fetch.log" || fail "output should print the fetch-depth hint"
+grep -q '^fatal:' "$tmp/fetch.log" && fail "output should not include a raw git error"
+
+# 8. A migration below the working directory is linted when the step runs from that directory:
+#    plain `git diff` prints paths relative to the repository root, so the script must ask for
+#    paths relative to the working directory before it reads or reports them. The same fixture
+#    from the repository root with a root-relative glob must keep working.
+nested_src="$tmp/nested-src"
+git init -q "$nested_src"
+git -C "$nested_src" config user.email ci@example.invalid
+git -C "$nested_src" config user.name ci
+git -C "$nested_src" checkout -q -b main
+mkdir -p "$nested_src/apps/api/internal/platform/migrations"
+goose 'ALTER TABLE t ADD COLUMN IF NOT EXISTS seed text;' \
+  'ALTER TABLE t DROP COLUMN IF EXISTS seed;' \
+  >"$nested_src/apps/api/internal/platform/migrations/0001_seed.sql"
+git -C "$nested_src" add -A
+git -C "$nested_src" commit -qm base
+
+git clone -q --bare "$nested_src" "$tmp/nested-remote.git"
+nested="$tmp/nested-work"
+git clone -q "$tmp/nested-remote.git" "$nested"
+git -C "$nested" config user.email ci@example.invalid
+git -C "$nested" config user.name ci
+git -C "$nested" checkout -q -b feat
+
+migrations_dir="$nested/apps/api/internal/platform/migrations"
+mkdir -p "$migrations_dir/bad" "$migrations_dir/good"
+goose 'ALTER TABLE t ADD COLUMN IF NOT EXISTS nested_required text NOT NULL;' \
+  'ALTER TABLE t DROP COLUMN IF EXISTS nested_required;' \
+  >"$migrations_dir/bad/0002_nested_required.sql"
+goose 'ALTER TABLE t ADD COLUMN IF NOT EXISTS nested_nullable text;' \
+  'ALTER TABLE t DROP COLUMN IF EXISTS nested_nullable;' \
+  >"$migrations_dir/good/0003_nested_nullable.sql"
+git -C "$nested" add -A
+git -C "$nested" commit -qm feat
+
+nested_run() {
+  local dir="$1" glob="$2"
+  ( cd "$dir" && env GITHUB_BASE_REF=main bash "$MIGRATIONS_SH" "$glob" )
+}
+
+# From apps/api, with a glob relative to it: the bad file fails, named relative to the same directory.
+set +e
+nested_run "$nested/apps/api" 'internal/platform/migrations/bad/*.sql' \
+  >"$tmp/nested-bad.log" 2>&1
+rc=$?
+set -e
+[[ $rc -ne 0 ]] || fail "a changed NOT NULL column under a subdirectory should fail"
+grep -q 'adding-required-field' "$tmp/nested-bad.log" \
+  || fail "subdirectory output should name the squawk rule"
+grep -q 'internal/platform/migrations/bad/0002_nested_required.sql' "$tmp/nested-bad.log" \
+  || fail "subdirectory output should name the file relative to the working directory"
+grep -q 'No such file or directory' "$tmp/nested-bad.log" \
+  && fail "subdirectory output should not show a missing file"
+
+nested_run "$nested/apps/api" 'internal/platform/migrations/good/*.sql' \
+  >"$tmp/nested-good.log" 2>&1 \
+  || { cat "$tmp/nested-good.log" >&2; fail "a changed nullable column under a subdirectory should pass"; }
+
+# From the repository root with a root-relative glob, behaviour is unchanged.
+set +e
+nested_run "$nested" 'apps/api/internal/platform/migrations/bad/*.sql' \
+  >"$tmp/nested-root-bad.log" 2>&1
+rc=$?
+set -e
+[[ $rc -ne 0 ]] || fail "a changed NOT NULL column from the repository root should fail"
+grep -q 'adding-required-field' "$tmp/nested-root-bad.log" \
+  || fail "root output should name the squawk rule"
+grep -q 'apps/api/internal/platform/migrations/bad/0002_nested_required.sql' \
+  "$tmp/nested-root-bad.log" \
+  || fail "root output should name the file relative to the repository root"
+
+nested_run "$nested" 'apps/api/internal/platform/migrations/good/*.sql' \
+  >"$tmp/nested-root-good.log" 2>&1 \
+  || { cat "$tmp/nested-root-good.log" >&2; fail "a changed nullable column from the repository root should pass"; }
 
 echo "PASS: test-migrations"

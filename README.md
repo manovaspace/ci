@@ -96,6 +96,16 @@ merge tree when the shallow merge commit has no merge base) and never touches an
 so an old migration that breaks a new rule cannot fail an unrelated pull request. On `push` and
 `workflow_dispatch` runs there is no base branch, so the step prints why and lints nothing.
 
+In a private repository whose `actions/checkout` uses `persist-credentials: false`, the script
+cannot fetch the base branch and the step fails with `git fetch` exit 128. The job that uses
+`migrations-glob` must check out with `fetch-depth: 0`, so the full history and the base ref are
+available without credentials:
+
+```yaml
+- uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+  with: { fetch-depth: 0, persist-credentials: false }
+```
+
 Goose files are linted through their `-- +goose Up` section only; `squawk --help` has no goose
 mode, so the section is extracted with `sed` and piped to squawk with `--stdin-filepath`, which
 keeps the real migration name in the findings. A file without goose markers is linted whole.
