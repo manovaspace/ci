@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: "."
+      migrations-glob:
+        description: "Glob of goose migration files to lint with squawk; empty disables"
+        required: false
+        type: string
+        default: ""
     secrets:
       GH_READ_TOKEN:
         description: "Read token for private github.com/manovaspace modules and siblings"
@@ -73,6 +78,7 @@ jobs:
           stack: go
           tier: release
           working-directory: ${{ inputs.working-directory }}
+          migrations-glob: ${{ inputs.migrations-glob }}
         env:
           GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
