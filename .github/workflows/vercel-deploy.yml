@@ -1,0 +1,149 @@
+# Reusable Vercel deploy for Manova Next.js frontends: build on our runner, then upload the prebuilt
+# output with the pinned Vercel CLI. A pull request gets a preview URL commented on the PR, a push to
+# main deploys production, and a push to staging deploys a preview then aliases it to the app's
+# staging host. A fork pull request receives no secrets and skips cleanly instead of failing.
+#
+# The caller must grant:
+#   permissions: { contents: read, pull-requests: write }
+# and pass the three repository secrets VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID with
+# `secrets: inherit`.
+name: vercel-deploy
+on:
+  workflow_call:
+    inputs:
+      working-directory: { type: string, default: ".", required: false }
+      staging-alias: { type: string, default: "", required: false }
+      vercel-version: { type: string, default: "65.5.0", required: false }
+      bun-version: { type: string, default: "1.4.4", required: false }
+      node-version: { type: string, default: "26.13.0", required: false }
+    secrets:
+      VERCEL_TOKEN: { required: false }
+      VERCEL_ORG_ID: { required: false }
+      VERCEL_PROJECT_ID: { required: false }
+permissions: { contents: read }
+concurrency:
+  group: vercel-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  deploy:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    permissions: { contents: read, pull-requests: write }
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          persist-credentials: false
+
+      - name: mode
+        id: mode
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          STAGING_ALIAS: ${{ inputs.staging-alias }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VERCEL_TOKEN:-}" || -z "${VERCEL_ORG_ID:-}" || -z "${VERCEL_PROJECT_ID:-}" ]]; then
+            echo "::notice::VERCEL_TOKEN, VERCEL_ORG_ID or VERCEL_PROJECT_ID is missing; skipping the deploy"
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$EVENT" in
+            pull_request) mode=preview ;;
+            push | workflow_dispatch)
+              case "$REF" in
+                refs/heads/main) mode=production ;;
+                refs/heads/staging) mode=staging ;;
+                *) mode=skip ;;
+              esac
+              ;;
+            *) mode=skip ;;
+          esac
+          if [[ "$mode" == staging && -z "$STAGING_ALIAS" ]]; then
+            echo "vercel-deploy: staging-alias is required for a push to refs/heads/staging" >&2
+            exit 1
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.mode.outputs.mode != 'skip' && steps.mode.outcome == 'success'
+        with:
+          bun-version: ${{ inputs.bun-version }}
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.mode.outputs.mode != 'skip' && steps.mode.outcome == 'success'
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: install
+        if: steps.mode.outputs.mode != 'skip' && steps.mode.outcome == 'success'
+        run: bun install --frozen-lockfile
+
+      - name: install vercel
+        if: steps.mode.outputs.mode != 'skip' && steps.mode.outcome == 'success'
+        env:
+          VERCEL_VERSION: ${{ inputs.vercel-version }}
+        run: npm install --global "vercel@${VERCEL_VERSION}"
+
+      - name: pull
+        if: steps.mode.outputs.mode != 'skip' && steps.mode.outcome == 'success'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == production ]]; then
+            vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+          else
+            vercel pull --yes --environment=preview --token "$VERCEL_TOKEN"
+          fi
+
+      - name: build
+        if: steps.mode.outputs.mode != 'skip' && steps.mode.outcome == 'success'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == production ]]; then
+            vercel build --prod --token "$VERCEL_TOKEN"
+          else
+            vercel build --token "$VERCEL_TOKEN"
+          fi
+
+      - name: deploy
+        id: deploy
+        if: steps.mode.outputs.mode != 'skip' && steps.mode.outcome == 'success'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == production ]]; then
+            url="$(vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN")"
+          else
+            url="$(vercel deploy --prebuilt --token "$VERCEL_TOKEN")"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: alias
+        if: steps.mode.outcome == 'success' && steps.mode.outputs.mode == 'staging'
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          STAGING_ALIAS: ${{ inputs.staging-alias }}
+        run: vercel alias set "$URL" "$STAGING_ALIAS" --token "$VERCEL_TOKEN"
+
+      - name: comment preview
+        if: steps.mode.outcome == 'success' && steps.mode.outputs.mode == 'preview'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --edit-last --create-if-none --body "Preview: $URL"

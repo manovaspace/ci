@@ -183,6 +183,47 @@ once. Pin the kit by full commit SHA with a version comment instead:
 
 A moved tag then cannot change CI under you, and Renovate keeps the pin current.
 
+## Vercel deploy
+
+`.github/workflows/vercel-deploy.yml` is a reusable workflow that builds a Next.js frontend on the
+selected runner and uploads it to Vercel with the pinned CLI. Vercel's own Git integration stays off,
+so nothing reaches Vercel without passing this workflow.
+
+```yaml
+name: Vercel
+on:
+  pull_request: { branches: [main, staging] }
+  push: { branches: [main, staging] }
+  workflow_dispatch:
+permissions: { contents: read, pull-requests: write }
+jobs:
+  deploy:
+    uses: manovaspace/ci/.github/workflows/vercel-deploy.yml@v1
+    with:
+      staging-alias: myapp.sta.manova.space
+    secrets: inherit
+```
+
+The caller must grant `contents: read` (checkout) and `pull-requests: write` (the preview comment),
+and must pass the repository secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` with
+`secrets: inherit`. They are declared `required: false` so a fork pull request, which receives no
+secrets, prints a notice and skips instead of failing.
+
+Inputs: `working-directory` (default `.`), `staging-alias` (default empty), `vercel-version`
+(default `65.5.0`), `bun-version` (default `1.4.4`) and `node-version` (default `26.13.0`).
+
+Modes, chosen from the caller's event and ref:
+
+- **preview** — a pull request: `vercel pull` and `vercel build` for the preview environment, then
+  `vercel deploy --prebuilt`, and `Preview: <url>` is commented on the PR (edited in place on a
+  re-run).
+- **production** — a push or manual dispatch on `main`: the production environment, then
+  `vercel build --prod` and `vercel deploy --prebuilt --prod`.
+- **staging** — a push on `staging`: a preview deploy followed by `vercel alias set` to the
+  `staging-alias` input, so `<app>.sta.manova.space` is a stable host on the Hobby plan.
+
+Any other ref, a fork pull request or a missing secret skips the job cleanly.
+
 ## Tests
 
 ```bash
