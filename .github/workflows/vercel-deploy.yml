@@ -125,9 +125,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$MODE" == production ]]; then
-            url="$(vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN")"
+            url="$(vercel deploy --prebuilt --prod --archive=tgz --token "$VERCEL_TOKEN")"
           else
-            url="$(vercel deploy --prebuilt --token "$VERCEL_TOKEN")"
+            url="$(vercel deploy --prebuilt --archive=tgz --token "$VERCEL_TOKEN")"
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
