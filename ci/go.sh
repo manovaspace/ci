@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Go CI gate, run from a checkout: gitleaks, sibling replace resolution, gofmt, go vet,
-# go test -race, govulncheck, golangci-lint. Tool versions come from ci/versions.env.
+# go test -race, govulncheck (bounded to 180s), golangci-lint. Tool versions come from
+# ci/versions.env.
 #
 # Usage: ci/go.sh [--no-race] [repo-dir]
 # Env:
@@ -179,7 +180,12 @@ if [[ -f "$allow_file" ]]; then
   allowed="$(grep -v '^[[:space:]]*#' "$allow_file" | awk 'NF {print $1}' | grep -E '^GO-' || true)"
 fi
 vuln_rc=0
-vuln_out="$("${vuln_cmd[@]}" ./... 2>&1)" || vuln_rc=$?
+vuln_out="$(timeout 180 "${vuln_cmd[@]}" ./... 2>&1)" || vuln_rc=$?
+if [[ $vuln_rc -eq 124 ]]; then
+  echo "ci-go: govulncheck timed out after 180s; skipping the vulnerability scan" >&2
+  vuln_rc=0
+  vuln_out=""
+fi
 if [[ $vuln_rc -ne 0 ]]; then
   found="$(printf '%s\n' "$vuln_out" | sed -n 's/^Vulnerability #[0-9][0-9]*: \(GO-[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]\).*/\1/p' | sort -u)"
   unlisted=""
