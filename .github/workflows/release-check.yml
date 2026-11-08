@@ -1,9 +1,9 @@
 name: release-check
 
 # Release-tier gate: the Go tests that need real dependencies (PostgreSQL, Redis, NATS JetStream)
-# and must not skip themselves silently. Runs on a GitHub-hosted runner only: it needs service
-# containers and docker, and the standby VPS runner must never run it, so `vars.CI_RUNNER` is
-# deliberately not consulted.
+# and must not skip themselves silently. It needs service containers and docker, so it runs on
+# `vars.CI_RUNNER` when that names the self-hosted pool (the GCP runners, label `vps`, which run
+# service containers) and on a GitHub-hosted runner otherwise.
 on:
   workflow_call:
     inputs:
@@ -27,10 +27,12 @@ on:
 
 jobs:
   release-check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
+    # Host ports are random and read back from job.services: two jobs share one self-hosted VM,
+    # so fixed host ports would collide.
     services:
       postgres:
         image: postgres:18-alpine
@@ -38,7 +40,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: test
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
@@ -47,7 +49,7 @@ jobs:
       redis:
         image: redis:8-alpine
         ports:
-          - 6379:6379
+          - 6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -59,18 +61,23 @@ jobs:
           persist-credentials: false
 
       # NATS needs -js, and a service container cannot take command arguments, so run it here.
+      # The container name and host port are per run, so concurrent jobs on one VM do not collide.
       - name: start nats
         run: |
           set -euo pipefail
-          docker run -d --name nats -p 4222:4222 nats:2.14-alpine -js
+          name="release-check-nats-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          echo "NATS_CONTAINER=$name" >>"$GITHUB_ENV"
+          docker run -d --name "$name" -p 127.0.0.1::4222 nats:2.14-alpine -js
+          port="$(docker port "$name" 4222/tcp | head -n 1 | sed 's/.*://')"
+          echo "NATS_PORT=$port" >>"$GITHUB_ENV"
           for _ in $(seq 30); do
-            if nc -z localhost 4222; then
+            if nc -z localhost "$port"; then
               exit 0
             fi
             sleep 1
           done
-          echo "release-check: nats did not accept connections on 4222 within 30s" >&2
-          docker logs nats || true
+          echo "release-check: nats did not accept connections on $port within 30s" >&2
+          docker logs "$name" || true
           exit 1
 
       - uses: manovaspace/ci@v1
@@ -82,6 +89,13 @@ jobs:
         env:
           GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/test?sslmode=disable
-          TEST_REDIS_URL: redis://localhost:6379
-          TEST_NATS_URL: nats://localhost:4222
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/test?sslmode=disable
+          TEST_REDIS_URL: redis://localhost:${{ job.services.redis.ports['6379'] }}
+          TEST_NATS_URL: nats://localhost:${{ env.NATS_PORT }}
+
+      - name: stop nats
+        if: always()
+        run: |
+          if [ -n "${NATS_CONTAINER:-}" ]; then
+            docker rm -f "$NATS_CONTAINER" >/dev/null 2>&1 || true
+          fi
