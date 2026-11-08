@@ -169,8 +169,9 @@ jobs:
     secrets: inherit
 ```
 
-It always runs on `ubuntu-latest` and never on the standby VPS runner: `vars.CI_RUNNER` is not
-consulted, because release checks need service containers and docker.
+It runs on `vars.CI_RUNNER` (the self-hosted GCP pool, which runs service containers) and falls back
+to `ubuntu-latest` when the variable is unset. Service ports are random host ports read from
+`job.services`, and NATS runs in a per-run container, because two jobs share one runner VM.
 
 ### Pinning
 
