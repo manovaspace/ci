@@ -211,7 +211,7 @@ and must pass the repository secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL
 secrets, prints a notice and skips instead of failing.
 
 Inputs: `working-directory` (default `.`), `staging-alias` (default empty), `vercel-version`
-(default `65.5.0`), `bun-version` (default `1.4.4`) and `node-version` (default `26.13.0`).
+(default `65.5.0`), `bun-version` (default `1.4.4`) and `node-version` (default `26.13.1`).
 
 Modes, chosen from the caller's event and ref:
 
