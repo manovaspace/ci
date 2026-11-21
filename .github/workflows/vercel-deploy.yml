@@ -15,7 +15,7 @@ on:
       staging-alias: { type: string, default: "", required: false }
       vercel-version: { type: string, default: "65.5.0", required: false }
       bun-version: { type: string, default: "1.4.4", required: false }
-      node-version: { type: string, default: "26.13.0", required: false }
+      node-version: { type: string, default: "26.13.1", required: false }
     secrets:
       VERCEL_TOKEN: { required: false }
       VERCEL_ORG_ID: { required: false }
