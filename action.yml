@@ -25,6 +25,10 @@ inputs:
     description: "Glob of goose migration files to lint with squawk on a pull request; empty disables"
     required: false
     default: ""
+  conventions:
+    description: "off, warn or require: check the shared conventions block in AGENTS.md"
+    required: false
+    default: "warn"
 
 runs:
   using: composite
@@ -34,6 +38,7 @@ runs:
       env:
         STACK: ${{ inputs.stack }}
         TIER: ${{ inputs.tier }}
+        CONVENTIONS: ${{ inputs.conventions }}
       run: |
         set -euo pipefail
         case "$STACK" in
@@ -50,6 +55,21 @@ runs:
             exit 1
             ;;
         esac
+        case "$CONVENTIONS" in
+          off | warn | require) ;;
+          *)
+            echo "ci: unknown conventions '$CONVENTIONS' (off, warn or require)" >&2
+            exit 1
+            ;;
+        esac
+
+    - name: conventions
+      if: inputs.conventions != 'off'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CONVENTIONS_REQUIRED: ${{ inputs.conventions == 'require' && '1' || '0' }}
+      run: bash "$GITHUB_ACTION_PATH/ci/conventions.sh" check .
 
     - name: versions
       shell: bash

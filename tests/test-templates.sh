@@ -94,11 +94,12 @@ offenders="$(awk '
 [[ -z "$offenders" ]] || fail "4: input expression interpolated into a run: script: ${offenders}"
 
 # 5. Every third-party `uses:` is pinned to a full commit SHA. The in-repo action (`./`) and this
-#    repository's own action (`manovaspace/ci@v1`) are the only moving references allowed.
+#    repository's own action and reusable workflows (`manovaspace/ci@v1`,
+#    `manovaspace/ci/.github/workflows/*@v1`) are the only moving references allowed.
 while IFS= read -r ref; do
   [[ -n "$ref" ]] || continue
   case "$ref" in
-    ./* | manovaspace/ci@v1) continue ;;
+    ./* | manovaspace/ci@v1 | manovaspace/ci/.github/workflows/*@v1) continue ;;
   esac
   [[ "$ref" =~ @[0-9a-f]{40}$ ]] || fail "5: $ref is not pinned to a 40-hex commit SHA"
 done < <(grep -hE '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[^[:space:]]+' \
