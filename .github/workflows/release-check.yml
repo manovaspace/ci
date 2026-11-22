@@ -2,7 +2,7 @@ name: release-check
 
 # Release-tier gate: the Go tests that need real dependencies (PostgreSQL, Redis, NATS JetStream)
 # and must not skip themselves silently. It needs service containers and docker, so it runs on
-# `vars.CI_RUNNER` when that names the self-hosted pool (the GCP runners, label `vps`, which run
+# `vars.CI_RUNNER` when that names the self-hosted pool (label `vps`, which runs
 # service containers) and on a GitHub-hosted runner otherwise.
 on:
   workflow_call:
