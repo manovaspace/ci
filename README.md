@@ -74,8 +74,10 @@ script), `extra` (one extra TS package script) and `migrations-glob` (default em
 the standby self-hosted runner.
 
 `templates/` holds copy-paste workflows: `ci.yml` (the file above), `codeql.yml` (weekly CodeQL on
-a schedule, no per-push run) and `deploy-ssh.yml` (SSH deploy of `__SERVICE__` on `main`). Replace
-`__STACK__`, `__LANG__` and `__SERVICE__` with the repository's values.
+a schedule, no per-push run), `deploy-ssh.yml` (SSH deploy of `__SERVICE__` on `main`) and
+`conventions-sync.yml` (weekly shared-conventions pull request, see
+[Shared conventions](#shared-conventions)). Replace `__STACK__`, `__LANG__` and `__SERVICE__` with the
+repository's values; `conventions-sync.yml` has no placeholders.
 
 ## Migrations
 
@@ -224,6 +226,31 @@ Modes, chosen from the caller's event and ref:
   `staging-alias` input, so `<app>.sta.manova.space` is a stable host on the Hobby plan.
 
 Any other ref, a fork pull request or a missing secret skips the job cleanly.
+
+## Shared conventions
+
+`conventions/core.md` holds the rules every Manova repository follows. `ci/conventions.sh` copies
+them, stamped with `conventions/VERSION`, into a block in the repository's `AGENTS.md` between
+`<!-- manova:conventions v1 ... -->` and `<!-- /manova:conventions -->` markers. Edit the rules here,
+never the copy.
+
+- `conventions` input of the action (default `warn`): `off` skips the check, `warn` prints a
+  `::warning::` when the block is missing or stale, `require` fails the job. A stale block always
+  fails when the block exists; `warn` only softens a missing block.
+- Add the block once, from a checkout of this repository: `bash ci/conventions.sh sync <repo-dir>`.
+  It appends the block when none exists and replaces it in place otherwise; re-running changes
+  nothing. `bash ci/conventions.sh check <repo-dir>` reports whether the block is current.
+- Keep the copy current with the weekly template `templates/conventions-sync.yml`: copy it to the
+  repository's `.github/workflows/`. It calls the reusable `.github/workflows/conventions-sync.yml`,
+  which runs `sync`, and opens or refreshes the `chore/conventions-sync` pull request when the
+  block changed. Its `ci-ref` input picks the `manovaspace/ci` ref to read from (default `v1`).
+
+Notes for the caller:
+
+- A private repository needs Settings → Actions → General → "Allow GitHub Actions to create and
+  approve pull requests", or `gh pr create` fails.
+- A pull request opened with `GITHUB_TOKEN` does not start CI on its own: re-run the checks or push
+  to the branch to trigger them.
 
 ## Tests
 

@@ -1,0 +1,74 @@
+name: conventions-sync
+
+# Reusable weekly job for a caller repository: copies conventions/core.md from manovaspace/ci into
+# the block in AGENTS.md and opens (or refreshes) one pull request when the copy changed. Called
+# from the caller's schedule; see templates/conventions-sync.yml.
+on:
+  workflow_call:
+    inputs:
+      ci-ref:
+        description: "manovaspace/ci ref to read the shared conventions from"
+        required: false
+        type: string
+        default: "v1"
+
+jobs:
+  sync:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Caller repository: credentials stay persisted, the push below uses them.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # manovaspace/ci is public: no token, and the caller's credentials are not written here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: manovaspace/ci
+          ref: ${{ inputs.ci-ref }}
+          path: .manova-ci
+          persist-credentials: false
+
+      - name: sync AGENTS.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f AGENTS.md ]]; then
+            echo "conventions-sync: no AGENTS.md in this repository, nothing to sync"
+            exit 0
+          fi
+          bash .manova-ci/ci/conventions.sh sync .
+
+      - name: open or update the pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_REF: ${{ inputs.ci-ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$(git status --porcelain AGENTS.md)" ]]; then
+            echo "conventions-sync: AGENTS.md already current"
+            exit 0
+          fi
+          version="$(tr -d '[:space:]' < .manova-ci/conventions/VERSION)"
+          branch="chore/conventions-sync"
+          title="chore: sync shared conventions v${version}"
+          body="Copies \`conventions/core.md\` (v${version}) from \`manovaspace/ci\` at \`${CI_REF}\` into the shared conventions block of \`AGENTS.md\`. Edit the source in \`manovaspace/ci\`, not this block; the weekly \`conventions-sync\` workflow regenerates it.
+
+          Pull requests opened with \`GITHUB_TOKEN\` do not start CI on their own: re-run the checks or push to this branch to trigger them."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git add AGENTS.md
+          git commit -m "chore: sync shared conventions v${version}"
+          git push --force origin "$branch"
+
+          pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$pr" ]]; then
+            gh pr edit "$pr" --title "$title" --body "$body"
+          else
+            gh pr create --head "$branch" --title "$title" --body "$body"
+          fi
