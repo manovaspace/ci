@@ -1,0 +1,34 @@
+name: CI
+
+# Dev-stage gate: the full check runs only on the release pull requests (release-please,
+# Changesets) and the dependency pull requests (Renovate), and on a manual dispatch. Other pull
+# requests and pushes are covered by the local pre-push gate and the secret-scan workflow.
+# Copy this file to .github/workflows/ of the repository and commit it.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-please--') || startsWith(github.head_ref, 'changeset-release/') || startsWith(github.head_ref, 'renovate/')
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: manovaspace/ci@v1
+        with:
+          stack: __STACK__
+        env:
+          GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
