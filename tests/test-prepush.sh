@@ -181,4 +181,37 @@ expect_fail ts-typecheck bash "$PREPUSH" "$repo" "$base..HEAD"
 grep -q '==> bun run typecheck' "$tmp/ts-typecheck.log" || fail "ts-typecheck should run typecheck"
 [[ ! -e "$repo/ran" ]] || fail "ts-typecheck should stop before the test script"
 
+# 11. git runs hooks with repository-local variables set. ci/prepush.sh must clear them before any
+#     test runs. The override fails if GIT_DIR, GIT_INDEX_FILE or GIT_WORK_TREE leaks in, then does
+#     a git init and git config in a fresh temp dir, as a test would. The pushing repo's config must
+#     not change.
+repo="$tmp/hook-env"
+new_go_repo "$repo"
+git -C "$repo" config --local user.email pusher@example.invalid
+base="$(git -C "$repo" rev-parse HEAD)"
+mkdir -p "$repo/scripts"
+cat >"$repo/scripts/prepush.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+for v in GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE; do
+  if [[ -n "${!v+x}" ]]; then
+    echo "leaked $v" >&2
+    exit 1
+  fi
+done
+throwaway="$(mktemp -d)"
+trap 'rm -rf -- "$throwaway"' EXIT
+git init -q "$throwaway"
+git -C "$throwaway" config user.email x@y
+SCRIPT
+chmod +x "$repo/scripts/prepush.sh"
+commit "$repo" "add hook env override"
+mid="$(git -C "$repo" rev-parse HEAD)"
+before="$(git -C "$repo" config --local --get user.email || true)"
+expect_pass hook-env env GIT_DIR="$repo/.git" GIT_INDEX_FILE="$repo/.git/index" \
+  bash "$PREPUSH" "$repo" "$base..$mid"
+after="$(git -C "$repo" config --local --get user.email || true)"
+[[ "$before" == "pusher@example.invalid" && "$after" == "$before" ]] \
+  || fail "hook-env changed the pushing repo user.email from '$before' to '$after'"
+
 echo "PASS: test-prepush"

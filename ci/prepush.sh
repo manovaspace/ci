@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Local per-change gate for the workspace pre-push hook: secret scan of each pushed range (never
 # skipped), lint (never skipped), then tests unless the push is docs-only or
-# ORBIT_PREPUSH_SKIP_TESTS=1. Never installs dependencies, never reaches the network (except
+# ORBIT_PREPUSH_SKIP_TESTS=1. Clears git's repository-local environment so tests cannot write to
+# the pushing repository. Never installs dependencies, never reaches the network (except
 # gitleaks' one-time cached download).
 #
 # Usage: ci/prepush.sh <repo-dir> <range> [<range>...]
@@ -104,6 +105,12 @@ run_tests() {
 }
 
 cd "$ROOT"
+
+# git runs hooks with repository-local variables set (GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE,
+# GIT_COMMON_DIR, ...). Tests that create throwaway repositories in temp dirs would inherit them and
+# write to the pushing repository, so clear them all here. The git calls below use git -C "$ROOT".
+# shellcheck disable=SC2046 # word splitting is intended: one variable name per line
+unset $(git rev-parse --local-env-vars)
 
 echo "==> secret scan"
 for range in "${ranges[@]}"; do
