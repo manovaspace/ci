@@ -214,4 +214,20 @@ after="$(git -C "$repo" config --local --get user.email || true)"
 [[ "$before" == "pusher@example.invalid" && "$after" == "$before" ]] \
   || fail "hook-env changed the pushing repo user.email from '$before' to '$after'"
 
+# 12. The default GOTMPDIR is ${XDG_CACHE_HOME}/go-tmp. XDG_CACHE_HOME here is a symlink, and the
+#     default must resolve to the physical directory: the fixture's Go test fails if GOTMPDIR still
+#     contains the symlink. env -u clears the GOTMPDIR this file exports above.
+mkdir -p "$tmp/realcache"
+ln -s "$tmp/realcache" "$tmp/linkcache"
+repo="$tmp/gotmp-physical"
+new_go_repo "$repo"
+base="$(git -C "$repo" rev-parse HEAD)"
+printf 'package main\n\nimport (\n\t"os"\n\t"path/filepath"\n\t"testing"\n)\n\nfunc TestGOTMPDIRIsPhysical(t *testing.T) {\n\tdir := os.Getenv("GOTMPDIR")\n\tif dir == "" {\n\t\tt.Fatal("GOTMPDIR is unset")\n\t}\n\tresolved, err := filepath.EvalSymlinks(dir)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif resolved != dir {\n\t\tt.Fatalf("GOTMPDIR %%q is not physical (resolves to %%q)", dir, resolved)\n\t}\n}\n' \
+  >"$repo/gotmp_test.go"
+commit "$repo" "add GOTMPDIR check"
+expect_pass gotmp-physical env -u GOTMPDIR XDG_CACHE_HOME="$tmp/linkcache" \
+  bash "$PREPUSH" "$repo" "$base..HEAD"
+grep -q 'GOWORK=off go test' "$tmp/gotmp-physical.log" || fail "gotmp-physical should run go test"
+[[ -d "$tmp/realcache/go-tmp" ]] || fail "gotmp-physical should create the default dir under the real cache"
+
 echo "PASS: test-prepush"

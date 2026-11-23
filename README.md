@@ -44,7 +44,7 @@ Allowlists are per repository and should be reviewed like code.
 | `CI_EXTRA` | ts | One extra package script to run after the standard ones. |
 | `CI_SIBLING_URL_BASE` | go | Prefix for sibling clone URLs (default `https://`; tests use `file://`). |
 | `ORBIT_PREPUSH_SKIP_TESTS` | prepush | `1` skips the test step of `ci/prepush.sh`. The secret scan and lint still run and cannot be skipped. |
-| `GOTMPDIR` | prepush | Go build temp dir. Unset: `ci/prepush.sh` uses `${XDG_CACHE_HOME:-$HOME/.cache}/go-tmp`, because `/tmp` is a small tmpfs on the dev host. |
+| `GOTMPDIR` | prepush | Go build temp dir. Unset: `ci/prepush.sh` uses `${XDG_CACHE_HOME:-$HOME/.cache}/go-tmp`, resolved to its physical path, because `/tmp` is a small tmpfs on the dev host and `~/.cache` can be a symlink. |
 
 ## Use it
 

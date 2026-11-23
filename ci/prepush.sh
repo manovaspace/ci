@@ -10,7 +10,8 @@
 #   "def456 --not --remotes=origin"
 # Env:
 #   ORBIT_PREPUSH_SKIP_TESTS=1  skip the test step only; the secret scan and lint still run
-#   XDG_CACHE_HOME              GOTMPDIR default base (${XDG_CACHE_HOME:-$HOME/.cache}/go-tmp)
+#   XDG_CACHE_HOME              GOTMPDIR default base (${XDG_CACHE_HOME:-$HOME/.cache}/go-tmp),
+#                               resolved to its physical path
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,6 +73,9 @@ run_tests() {
       # /tmp is a small tmpfs on the dev host; link steps need disk.
       GOTMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/go-tmp"
       mkdir -p "$GOTMPDIR"
+      # The cache dir can be a symlink to another volume (the dev host's ~/.cache is one). Code under
+      # test that refuses aliased destinations would fail on a symlinked temp path, so resolve it.
+      GOTMPDIR="$(cd -P "$GOTMPDIR" && pwd -P)"
       export GOTMPDIR
     fi
     echo "==> GOWORK=off go test ./..."
