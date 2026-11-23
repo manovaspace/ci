@@ -10,14 +10,22 @@ version file, callable from any workflow. Public and MIT — no secrets live her
 - `ci/ts.sh [repo-dir]` — gitleaks tree scan, optional `@orbit` `.npmrc`, `bun install
   --frozen-lockfile`, then `lint`, `typecheck`, `test`, `build` when the package defines them.
 - `ci/lint.sh [repo-dir]` — fast, offline pre-push lint: `gofmt` + `go vet` for Go, the package
-  `lint` script or Biome for Bun, and a clean skip for trees it cannot lint. The workspace
-  `pre-push` hook runs it.
+  `lint` script or Biome for Bun, and a clean skip for trees it cannot lint. `ci/prepush.sh` runs it.
+- `ci/prepush.sh <repo-dir> <range> [<range>...]` — the local per-change gate the workspace
+  `pre-push` hook calls, in order: secret scan of each range (never skipped), `ci/lint.sh` (never
+  skipped), then tests: `scripts/prepush.sh` when the repository has one, else `GOWORK=off go test
+  ./...` for Go, or for Bun the package `typecheck` script then the `test` script, each only when
+  defined (`node_modules` must exist for Bun; it is never installed). Docs-only pushes (every path `*.md`, `*.mdx`
+  or under `docs/`) and `ORBIT_PREPUSH_SKIP_TESTS=1` skip the tests. Never installs dependencies.
 - `ci/migrations.sh <glob>` — pinned squawk on the goose migrations a pull request changed against
   its base branch only, so an old migration never fails a new rule.
 
 The Go and TS gates source `ci/lib/snapshot.sh` (disk guard + disposable pinned checkout) and read
 tool versions from `ci/versions.env`; `ci/gitleaks.sh [dir]` is the pinned, history-free scanner
-they call. `ci/golangci-lint.sh [args...]` runs the pinned, SHA-256-verified golangci-lint
+they call. `ci/gitleaks.sh --range "<rev-list args>" [repo-dir]` scans only the commits of one range
+(`git log` arguments in one string, for example `abc123..def456` or `def456 --not --remotes=origin`).
+Both modes pick the pinned asset for linux or darwin, x64 or arm64, and cache it per platform.
+`ci/golangci-lint.sh [args...]` runs the pinned, SHA-256-verified golangci-lint
 prebuilt binary, downloaded once and cached. `ci/actionlint.sh [args...]` does the same for
 actionlint and runs on any repository that has `.github/workflows`.
 
@@ -35,6 +43,8 @@ Allowlists are per repository and should be reviewed like code.
 | `CI_SKIP_TESTS` | ts | `1` allows a package with no `test` script. |
 | `CI_EXTRA` | ts | One extra package script to run after the standard ones. |
 | `CI_SIBLING_URL_BASE` | go | Prefix for sibling clone URLs (default `https://`; tests use `file://`). |
+| `ORBIT_PREPUSH_SKIP_TESTS` | prepush | `1` skips the test step of `ci/prepush.sh`. The secret scan and lint still run and cannot be skipped. |
+| `GOTMPDIR` | prepush | Go build temp dir. Unset: `ci/prepush.sh` uses `${XDG_CACHE_HOME:-$HOME/.cache}/go-tmp`, because `/tmp` is a small tmpfs on the dev host. |
 
 ## Use it
 
@@ -73,11 +83,47 @@ script), `extra` (one extra TS package script) and `migrations-glob` (default em
 `vars.CI_RUNNER` selects the runner: unset means `ubuntu-latest`, `vps` switches the repository to
 the standby self-hosted runner.
 
-`templates/` holds copy-paste workflows: `ci.yml` (the file above), `codeql.yml` (weekly CodeQL on
-a schedule, no per-push run), `deploy-ssh.yml` (SSH deploy of `__SERVICE__` on `main`) and
+`templates/` holds copy-paste workflows: `ci.yml` (the file above), `ci-release-only.yml` (the same
+check, run only on release and Renovate pull requests and on manual dispatch), `secret-scan.yml`
+(per-push secret scan, see [Secret scan workflow](#secret-scan-workflow)), `codeql.yml` (weekly
+CodeQL on a schedule, no per-push run), `deploy-ssh.yml` (SSH deploy of `__SERVICE__` on `main`) and
 `conventions-sync.yml` (weekly shared-conventions pull request, see
 [Shared conventions](#shared-conventions)). Replace `__STACK__`, `__LANG__` and `__SERVICE__` with the
-repository's values; `conventions-sync.yml` has no placeholders.
+repository's values; `secret-scan.yml` and `conventions-sync.yml` have no placeholders.
+
+## Pre-push gate
+
+`ci/prepush.sh` is the per-change gate: the workspace `pre-push` hook runs it on each push, with the
+ranges being pushed. The secret scan and lint always run. The tests run unless the push only touches
+markdown or `docs/`, or `ORBIT_PREPUSH_SKIP_TESTS=1` is set. A repository can own its test command by
+adding an executable `scripts/prepush.sh`:
+
+- When `scripts/prepush.sh` exists and is executable, it replaces the default test step. It runs
+  from the repository root with the ranges as arguments, and `CI_PREPUSH_RANGES` holds the same
+  ranges, one per line.
+- It is not run for docs-only pushes or with `ORBIT_PREPUSH_SKIP_TESTS=1`, and it does not replace
+  the secret scan or lint.
+
+## Secret scan workflow
+
+`templates/secret-scan.yml` runs gitleaks on every push, so a secret is caught on the server even
+when the local hook was skipped. It is cheap: it scans only the commits a push adds (against
+`origin/main` for a new branch), not the whole tree, and it does not run the full gate. The check
+shows as `secret-scan / gitleaks`.
+
+```yaml
+name: secret-scan
+on:
+  push:
+    branches: ["**"]
+permissions:
+  contents: read
+jobs:
+  secret-scan:
+    uses: manovaspace/ci/.github/workflows/secret-scan.yml@v1
+```
+
+`secret-scan.yml` reads the gitleaks pin from `ci-ref` (default `v1`). A branch deletion skips it.
 
 ## Migrations
 
