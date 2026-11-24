@@ -1,16 +1,18 @@
 name: CI
 
-# Dev-stage gate: the full check runs only on the release pull requests (release-please,
-# Changesets) and the dependency pull requests (Renovate), and on a manual dispatch. Other pull
-# requests and pushes are covered by the local pre-push gate and the secret-scan workflow.
-# Copy this file to .github/workflows/ of the repository and commit it.
+# Dev-stage gate (ADR-076): the full check runs only on pushes to the release branches
+# (release-please, Changesets) and the dependency branches (Renovate), and on a manual dispatch.
+# It is triggered by push, not pull_request: GitHub cannot filter pull_request by head branch, so a
+# pull_request trigger leaves a skipped check row on every pull request. A push run attaches its
+# checks to the open pull request's head commit. Other pushes are covered by the local pre-push gate
+# and the secret-scan workflow. Copy this file to .github/workflows/ of the repository and commit it.
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: ["release-please--**", "changeset-release/**", "renovate/**"]
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.head_ref || github.run_id }}
+  group: ci-${{ github.event_name == 'push' && github.ref_name || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -18,7 +20,7 @@ permissions:
 
 jobs:
   check:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-please--') || startsWith(github.head_ref, 'changeset-release/') || startsWith(github.head_ref, 'renovate/')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'release-please--') || startsWith(github.ref_name, 'changeset-release/') || startsWith(github.ref_name, 'renovate/')
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
