@@ -26,7 +26,13 @@ These rules apply to every Manova repository. They are copied from `manovaspace/
 11. Configuration comes from the environment. A service with a missing required setting refuses to start; it never falls back to a built-in secret or a development default in production.
 12. Port numbers come from the workspace port registry. Do not invent a port.
 
+### User interface
+
+13. A change to what users see starts only after the owner approved its flow spec (`docs/flows/<module>/<flow>.md`) and its target: an existing page to follow, a kit page template or an approved draft screen. Bug fixes that restore specified behaviour and copy-only edits are exempt.
+14. Build from `@manovaspace/ui` components and page templates and the repository's `docs/ui/rules.md`. A missing or wrong component is fixed in the kit first. Do not use art-direction skills (`frontend-design`, Taste) on product UI.
+15. Write every owner answer about product behaviour or UI to `docs/ui/decisions.md` (append-only) or the flow spec, never only to agent memory.
+
 ### Documentation
 
-13. This repository explains itself: `README.md` says how to set up, run, test and deploy it; `AGENTS.md` holds its binding rules; repository decisions live in `docs/decisions/`.
-14. Write plain, short sentences. Keep exact names, paths, commands and versions. Do not document what the code already says.
+16. This repository explains itself: `README.md` says how to set up, run, test and deploy it; `AGENTS.md` holds its binding rules; repository decisions live in `docs/decisions/`.
+17. Write plain, short sentences. Keep exact names, paths, commands and versions. Do not document what the code already says.

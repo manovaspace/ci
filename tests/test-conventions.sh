@@ -38,7 +38,7 @@ expect_fail 2-required env CONVENTIONS_REQUIRED=1 bash "$CONV" check "$tmp/noblo
 # 3. Sync appends the block; check then passes.
 bash "$CONV" sync "$tmp/noblock" >/dev/null || fail "3: sync should append"
 bash "$CONV" check "$tmp/noblock" >"$tmp/current.log" 2>&1 || { cat "$tmp/current.log" >&2; fail "3: check after sync should pass"; }
-grep -q 'conventions v1 current' "$tmp/current.log" || fail "3: check should report conventions v1 current"
+grep -q 'conventions v2 current' "$tmp/current.log" || fail "3: check should report conventions v2 current"
 
 # 4. Sync twice leaves the file unchanged.
 cp "$tmp/noblock/AGENTS.md" "$tmp/once.md"
@@ -50,7 +50,7 @@ cmp "$tmp/once.md" "$tmp/noblock/AGENTS.md" || fail "4: sync is not idempotent"
 printf '\nKeep this after.\n' >>"$tmp/noblock/AGENTS.md"
 sed -i '/^<!-- manova:conventions v/a edited by hand' "$tmp/noblock/AGENTS.md"
 expect_fail 5-stale bash "$CONV" check "$tmp/noblock"
-grep -q '::error::.*stale: found v1, current v1' "$tmp/5-stale.log" || fail "5: stale error should name found and current versions"
+grep -q '::error::.*stale: found v2, current v2' "$tmp/5-stale.log" || fail "5: stale error should name found and current versions"
 bash "$CONV" sync "$tmp/noblock" >/dev/null || fail "5: sync should replace the stale block"
 {
   printf '# Repo\n\nHand-written rules.\n\n'
@@ -64,7 +64,7 @@ bash "$CONV" check "$tmp/noblock" >/dev/null || fail "5: check after repair shou
 mkdir "$tmp/old"
 printf '<!-- manova:conventions v0 — generated from manovaspace/ci conventions/core.md; edit it there -->\nold\n<!-- /manova:conventions -->\n' >"$tmp/old/AGENTS.md"
 expect_fail 6-old bash "$CONV" check "$tmp/old"
-grep -q 'found v0, current v1' "$tmp/6-old.log" || fail "6: old block should name found v0 and current v1"
+grep -q 'found v0, current v2' "$tmp/6-old.log" || fail "6: old block should name found v0 and current v2"
 
 # 7. Sync without AGENTS.md fails and creates nothing.
 mkdir "$tmp/empty"
@@ -74,6 +74,6 @@ expect_fail 7-nofile bash "$CONV" sync "$tmp/empty"
 # 8. render starts with the marker line for the current version.
 [[ "$(bash "$CONV" render | head -n 1)" == "<!-- manova:conventions v$(tr -d '[:space:]' < "$ROOT/conventions/VERSION") — "* ]] \
   || fail "8: render should start with <!-- manova:conventions v<VERSION>"
-[[ "$(bash "$CONV" render | head -n 1)" == "<!-- manova:conventions v1 "* ]] || fail "8: render should start with v1 for VERSION 1"
+[[ "$(bash "$CONV" render | head -n 1)" == "<!-- manova:conventions v2 "* ]] || fail "8: render should start with v2 for VERSION 2"
 
 echo "PASS: test-conventions"
