@@ -84,7 +84,7 @@ script), `extra` (one extra TS package script) and `migrations-glob` (default em
 the standby self-hosted runner.
 
 `templates/` holds copy-paste workflows: `ci.yml` (the file above), `ci-release-only.yml` (the same
-check, run only on release and Renovate pull requests and on manual dispatch), `secret-scan.yml`
+check, run only on pushes to release and Renovate branches and on manual dispatch, so feature pull requests show no CI rows), `secret-scan.yml`
 (per-push secret scan, see [Secret scan workflow](#secret-scan-workflow)), `codeql.yml` (weekly
 CodeQL on a schedule, no per-push run), `deploy-ssh.yml` (SSH deploy of `__SERVICE__` on `main`) and
 `conventions-sync.yml` (weekly shared-conventions pull request, see
@@ -213,6 +213,21 @@ permissions: { contents: read }
 jobs:
   release-check:
     if: github.head_ref == 'changeset-release/main' || startsWith(github.head_ref, 'release-please--')
+    uses: manovaspace/ci/.github/workflows/release-check.yml@v1
+    secrets: inherit
+```
+
+Private repositories in the dev stage (ADR-076) trigger it on pushes to the release branches instead, so feature pull requests get no check row:
+
+```yaml
+name: release-check
+on:
+  push:
+    branches: ["changeset-release/main", "release-please--**"]
+permissions: { contents: read }
+jobs:
+  release-check:
+    if: github.ref_name == 'changeset-release/main' || startsWith(github.ref_name, 'release-please--')
     uses: manovaspace/ci/.github/workflows/release-check.yml@v1
     secrets: inherit
 ```
